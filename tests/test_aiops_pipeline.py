@@ -1,3 +1,6 @@
+import runpy
+from unittest.mock import patch
+
 from src.anomaly_detector import AnomalyDetector
 from src.aiops_pipeline import load_data, run_pipeline
 from src.event_consumer import EventConsumer
@@ -118,3 +121,34 @@ def test_run_pipeline(tmp_path):
     assert result["records_processed"] == 2
     assert len(result["anomalies_detected"]) == 1
     assert len(result["events_consumed"]) == 0
+
+
+def test_main_block(capsys):
+    events = [
+        {
+            "timestamp": "2026-09-20T10:05:00",
+            "service": "payment-service",
+            "type": "ANOMALY",
+            "reasons": ["High response time"]
+        }
+    ]
+
+    from event_consumer import EventConsumer as PipelineEventConsumer
+
+    with patch.object(
+        PipelineEventConsumer,
+        "consume",
+        return_value=events
+    ):
+        runpy.run_module("src.aiops_pipeline", run_name="__main__")
+
+    output = capsys.readouterr().out
+
+    assert "AIOps Pipeline Result" in output
+    assert "Records processed:" in output
+    assert "Anomalies detected:" in output
+    assert "Events consumed:" in output
+    assert "Service: payment-service" in output
+    assert "Timestamp: 2026-09-20T10:05:00" in output
+    assert "Type: ANOMALY" in output
+    assert "High response time" in output
