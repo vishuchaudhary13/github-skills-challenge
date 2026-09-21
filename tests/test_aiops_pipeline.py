@@ -1,7 +1,5 @@
-from pathlib import Path
-
 from src.anomaly_detector import AnomalyDetector
-from src.aiops_pipeline import run_pipeline
+from src.aiops_pipeline import load_data, run_pipeline
 from src.event_consumer import EventConsumer
 from src.event_producer import EventProducer
 from src.event_topic import EventTopic
@@ -29,9 +27,9 @@ def test_anomalous_record_is_detected():
     record = {
         "timestamp": "2026-09-20T10:05:00",
         "service": "payment-service",
-        "response_time_ms": 610,
-        "cpu_percent": 75,
-        "memory_percent": 70,
+        "response_time_ms": 1000,
+        "cpu_percent": 95,
+        "memory_percent": 95,
         "log_level": "ERROR",
         "message": "Payment service timeout"
     }
@@ -70,3 +68,53 @@ def test_consumer_receives_event():
     messages = consumer.consume()
 
     assert len(messages) == 1
+    assert messages[0]["type"] == "ANOMALY"
+    assert messages[0]["service"] == "payment-service"
+
+
+def test_load_data(tmp_path):
+    data_file = tmp_path / "data.json"
+
+    data_file.write_text(
+        '[{"service": "payment-service", "response_time_ms": 100}]',
+        encoding="utf-8"
+    )
+
+    data = load_data(data_file)
+
+    assert len(data) == 1
+    assert data[0]["service"] == "payment-service"
+
+
+def test_run_pipeline(tmp_path):
+    data_file = tmp_path / "data.json"
+
+    data_file.write_text(
+        """[
+            {
+                "timestamp": "2026-09-20T10:00:00",
+                "service": "payment-service",
+                "response_time_ms": 120,
+                "cpu_percent": 42,
+                "memory_percent": 51,
+                "log_level": "INFO",
+                "message": "Payment request processed successfully"
+            },
+            {
+                "timestamp": "2026-09-20T10:05:00",
+                "service": "payment-service",
+                "response_time_ms": 1000,
+                "cpu_percent": 95,
+                "memory_percent": 95,
+                "log_level": "ERROR",
+                "message": "Payment service timeout"
+            }
+        ]""",
+        encoding="utf-8"
+    )
+
+    result = run_pipeline(data_file)
+
+    assert result["records_processed"] == 2
+    assert len(result["anomalies_detected"]) == 1
+    assert len(result["events_consumed"]) == 0
